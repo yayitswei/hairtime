@@ -2,7 +2,6 @@
   (:use [pocket.core :as skt]
         [overtone.live])
   (:require
-    [hairtime.dubstep :as dubstep]
     [clojure.data.json :as json]))
 
 (def app-auth {"appName" "hairtime"
@@ -14,6 +13,7 @@
 (defonce *headset (atom nil))
 (defonce *play (atom false))
 (defonce *dubstep (atom nil))
+(defonce *midi-device (atom nil))
 
 ;; 0 -> 1
 ;; 100 -> 64
@@ -44,19 +44,27 @@
         register (int (scale-pct pct low high))]
     (register->tone register scale)))
 
-(defn init-dubstep! []
+(comment (defn init-dubstep! []
   (reset! *dubstep (dubstep/dubstep))
-  ;;(ctl @*dubstep :snare-vol 0)
-  ;;(ctl @*dubstep :kick-vol 0)
-)
+  (ctl @*dubstep :snare-vol 0)
+  (ctl @*dubstep :kick-vol 0)))
+;
 
-(defn change-dubstep [{{attention "attention"
+(comment (defn change-dubstep [{{attention "attention"
                         meditation "meditation"} "eSense"}]
   (let [note (pct->tone meditation chromatic)
         wobble (pct->wobble attention)]
     (println "note: " note "\t wobble: " wobble)
     (ctl @*dubstep :note note)
-    (ctl @*dubstep :wobble wobble)))
+    (ctl @*dubstep :wobble wobble))))
+
+(defn play-note [{{attention "attention"
+                        meditation "meditation"} "eSense"}]
+  (let [note (pct->tone meditation pentatonic-scale)
+        attack (pct->wobble attention)]
+    (println "note: " note "\t attack: " attack)
+    (midi-note-off @*midi-device note)
+    (midi-note-on @*midi-device note 100)))
 
 (defn send-json [msg]
   (skt/write-once @*headset (json/json-str msg)))
@@ -78,19 +86,24 @@
   (loop []
     (when @*play
       (when-let [result (read-headset-val)]
-        (if (contains? result "eSense")
-          (change-dubstep result))
+        (when (contains? result "eSense")
+          (println "playing note" result)
+          (play-note result)
+         ; (change-dubstep result)
+          )
         (recur)))))
 
 (defn start-read-loop! []
   (.start (Thread. (read-loop))))
 
 (defn start! []
+  (println "Select a MIDI device")
+  (reset! *midi-device (midi-out))
   (reset! *headset (skt/socket "127.0.0.1" 13854))
   (send-json app-config)
   (flush-binary-data)
   (reset! *play true)
-  (init-dubstep!)
+  (comment (init-dubstep!))
   (start-read-loop!))
 
 (defn stop! []
